@@ -257,6 +257,28 @@ module Resque
     end
   end
 
+  # Pushes a job to the start ofa  queue. Queue name should be a string and the
+  # item should be any JSON-able Ruby object.
+  #
+  # Resque works generally expect the `item` to be a hash with the following
+  # keys:
+  #
+  #   class - The String name of the job to run.
+  #    args - An Array of arguments to pass the job. Usually passed
+  #           via `class.to_class.perform(*args)`.
+  #
+  # Example
+  #
+  #   Resque.priority_push('archive', :class => 'Archive', :args => [ 35 ])
+  #
+  # Returns nothing
+  def priority_push(queue,item)
+    redis.pipelined do
+      watch_queue(queue)
+      redis.lpush "queue:#{queue}", encode(item)
+    end
+  end
+
   # Pops a job off a queue. Queue name should be a string.
   #
   # Returns a Ruby object.
@@ -355,6 +377,29 @@ module Resque
     return nil if before_hooks.any? { |result| result == false }
 
     Job.create(queue, klass, *args)
+
+    Plugin.after_enqueue_hooks(klass).each do |hook|
+      klass.send(hook, *args)
+    end
+
+    return true
+  end
+
+  # Just like `enqueue` but allows you to specify the queue you want to
+  # use, and puts the job to the front of the queue. Runs hooks.
+  #
+  # `queue` should be the String name of the queue you're targeting.
+  #
+  # Returns true if the job was queued, nil if the job was rejected by a
+  # before_enqueue hook.
+  #
+  def priority_enqueue_to(queue, klass, *args)
+    before_hooks = Plugin.before_enqueue_hooks(klass).collect do |hook|
+      klass.send(hook, *args)
+    end
+    return nil if before_hooks.any? { |result| result == false }
+
+    Job.priority_create(queue, klass, *args)
 
     Plugin.after_enqueue_hooks(klass).each do |hook|
       klass.send(hook, *args)

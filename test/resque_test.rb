@@ -163,6 +163,16 @@ context "Resque" do
     assert Resque.push(:people, { 'name' => 'jon' })
   end
 
+  test "can put priority items to the front of a queue" do
+    assert Resque.push(:people, { 'name' => 'chris' })
+    assert Resque.priority_push(:people, { 'name' => 'bob' })
+    assert Resque.priority_enqueue_to(:people, :queue_q, { 'name' => 'alice' })
+    assert Resque.push(:people, { 'name' => 'dan' })
+    assert_equal({ 'name' => 'alice' }, Resque.pop(:people)["args"][0])
+    assert_equal({ 'name' => 'bob' }, Resque.pop(:people))
+    assert_equal({ 'name' => 'chris' }, Resque.pop(:people))
+  end
+
   test "can pull items off a queue" do
     assert_equal({ 'name' => 'chris' }, Resque.pop(:people))
     assert_equal({ 'name' => 'bob' }, Resque.pop(:people))
